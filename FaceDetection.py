@@ -14,6 +14,7 @@ import numpy as np
 import cv2
 from picamera2 import Picamera2
 import time
+import logging
 
 # API Gateway URL (replace with your actual URL)
 API_URL = ' https://86ifarstkg.execute-api.us-east-1.amazonaws.com/FaceDetect/'
@@ -28,7 +29,7 @@ target_email2= 'ofekpa@hotmail.com'
 AWS_ACCESS_KEY = 'AKIA4RCAOF3EJLMIPLKF'
 AWS_SECRET_KEY = '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'
 BUCKET_NAME = "ofekpa"
-DOWNLOAD_FOLDER = "downloaded_images" 
+DOWNLOAD_FOLDER = "downloaded_images"
 
 # Path to the input image
 image_path = 'Capture.JPG'
@@ -130,7 +131,7 @@ def download_face_images():
                 local_file_path = os.path.join(DOWNLOAD_FOLDER, os.path.basename(file_key))
                 if not os.path.exists(local_file_path):
                     s3.download_file(BUCKET_NAME, file_key, local_file_path)
-                    print(f"Downloaded: {file_key} -> {local_file_path}")
+                   # print(f"Downloaded: {file_key} -> {local_file_path}")
         print("All .jpg files downloaded successfully!")
     except Exception as e:
         print(f"Error: {e}")
@@ -195,30 +196,33 @@ def detect_face_in_video(frame):
         return False
     faces = face_cascade.detectMultiScale(gray, 1.1,4)
     return len(faces) > 0
-    
+   
 def face_detection():
     result = False
     for file_name in os.listdir(DOWNLOAD_FOLDER):
-        if file_name.lower().endswith(".jpg"): 
+        if file_name.lower().endswith(".jpg"):
             result = is_face_match(image_path,f'{DOWNLOAD_FOLDER}//{file_name}')
             if(result == True):
+                print("Authorized Entrance has been made")
                 break
     if result == False:
+        print("UnAuthorized entrance was tried. Send Email with details")
         subject = 'UnAuthorized access'
         message = 'An attempt to make unauthorized entrance was done. Image of the person is attached'
         send_email(subject,message,None,image_path)
 
 # Send the image and process the response
-def main():
+def main():S
     download_face_images()
     print("Finish download images")
     # Initialize Picamera2
+    os.environ["LIBCAMERA_LOG_LEVELS"] = "*:ERROR"
     picam2 = Picamera2()
 
     # Set up the camera configuration
     video_config = picam2.create_video_configuration()
     picam2.configure(video_config)
-    
+   
     #SHOW VIDEO
 
     # Start the camera
@@ -230,7 +234,7 @@ def main():
             # Capture a frame from the camera
             picam2.start_and_capture_file(image_path)
             frame = cv2.imread(image_path)
-            
+           
             #show the
             #cv2.imshow("Video",frame)
             # Call the function to detect faces in the frame
@@ -245,6 +249,6 @@ def main():
         # Stop the camera gracefully when interrupted
         picam2.close()
         picam2.stop()
-    
+   
 if __name__ == "__main__":
     main()
