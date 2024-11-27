@@ -212,7 +212,7 @@ def face_detection():
         send_email(subject,message,None,image_path)
 
 # Send the image and process the response
-def main():S
+def main():
     download_face_images()
     print("Finish download images")
     # Initialize Picamera2
