@@ -12,20 +12,18 @@ from deepface import DeepFace
 from scipy.spatial.distance import cosine
 import numpy as np
 import cv2
-from picamera2 import Picamera2
+#from picamera2 import Picamera2
 import time
-import logging
+import shutil
 
-# API Gateway URL (replace with your actual URL)
-API_URL = ' https://86ifarstkg.execute-api.us-east-1.amazonaws.com/FaceDetect/'
 
 # Email configuration
-SMTP_SERVER = 'smtp.gmail.com'  # Use your SMTP server (e.g., Gmail)
+SMTP_SERVER = 'smtp.gmail.com'  
 SMTP_PORT = 587
 EMAIL_ADDRESS = 'finalproject831@gmail.com'  # Sender email address
-EMAIL_PASSWORD = 'iufryabbtpprizrc'  # Sender email password
+EMAIL_PASSWORD = 'nlfnkgfhujelykmm'  # Sender email password
 target_email = 'galranel22@gmail.com'
-target_email2= 'ofekpa@hotmail.com'
+#target_email= 'ofekpa@hotmail.com'
 AWS_ACCESS_KEY = 'AKIA4RCAOF3EJLMIPLKF'
 AWS_SECRET_KEY = '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'
 BUCKET_NAME = "ofekpa"
@@ -103,51 +101,45 @@ def process_image(image_path):
     except Exception as e:
         print(f"Error processing image: {e}")
 
+def clear_local_directory(path):
+    if os.path.exists(path):
+        shutil.rmtree(path)
+    os.makedirs(path)
+    
+
 def download_face_images():
-    # Create the download folder if it doesn't exist
-    if not os.path.exists(DOWNLOAD_FOLDER):
-        os.makedirs(DOWNLOAD_FOLDER)
-    else:
-        for file_name in os.listdir(DOWNLOAD_FOLDER):
-            file_path = os.path.join(DOWNLOAD_FOLDER,file_name)
-            if os.path.isfile(file_path):
-                os.remove(file_path)
-    # Initialize S3 client
-    s3 = boto3.client('s3')  # Credentials will be picked up from environment variables or AWS config
+    s3 = boto3.client("s3")
+    paginator = s3.get_paginator("list_objects_v2")
+    pages = paginator.paginate(Bucket=BUCKET_NAME)
 
-    try:
-        # List all objects in the bucket
-        response = s3.list_objects_v2(Bucket=BUCKET_NAME)
+    folders = set()
+    files_downloaded = []
 
-        # Check if the bucket is empty
-        if 'Contents' not in response:
-            print("No files found in the bucket.")
-            return
+    for page in pages:
+        if "Contents" in page:
+            for obj in page["Contents"]:
+                key = obj["Key"]
+                if key.endswith(".jpg"):
+                    # Extract folder name and file name
+                    folder_name = os.path.dirname(key)
+                    file_name = os.path.basename(key)
 
-        # Download files ending with .jpg
-        for obj in response['Contents']:
-            file_key = obj['Key']
-            if file_key.lower().endswith('.jpg'):
-                local_file_path = os.path.join(DOWNLOAD_FOLDER, os.path.basename(file_key))
-                if not os.path.exists(local_file_path):
-                    s3.download_file(BUCKET_NAME, file_key, local_file_path)
-                   # print(f"Downloaded: {file_key} -> {local_file_path}")
-        print("All .jpg files downloaded successfully!")
-    except Exception as e:
-        print(f"Error: {e}")
+                    # Ensure local folder exists
+                    local_folder_path = os.path.join(DOWNLOAD_FOLDER, folder_name)
+                    os.makedirs(local_folder_path, exist_ok=True)
+                    folders.add(local_folder_path)
 
-def is_face_match(target_image_path, checked_image_path, threshold=0.6):
-    """
-    Checks if the face in the checked image matches the face in the target image.
+                    # Download file
+                    local_file_path = os.path.join(local_folder_path, file_name)
+                    s3.download_file(BUCKET_NAME, key, local_file_path)
+                    files_downloaded.append(local_file_path)
 
-    Parameters:
-        target_image_path (str): Path to the target image.
-        checked_image_path (str): Path to the image to be checked.
-        threshold (float): Cosine distance threshold for determining a match.
+    return list(folders), files_downloaded
 
-    Returns:
-        bool: True if the faces match, False otherwise.
-    """
+
+
+def is_face_match(target_image_path, checked_image_path, threshold=0.35):
+
     try:
         # Extract embeddings for the target image
         target_embedding_result = DeepFace.represent(img_path=target_image_path, model_name='Facenet', enforce_detection=False)
@@ -176,16 +168,7 @@ def is_face_match(target_image_path, checked_image_path, threshold=0.6):
         return False
 
 def detect_face_in_video(frame):
-    """
-    Detects if a face is present in the given video frame.
 
-    Args:
-        frame: The current video frame (image) from the camera.
-        face_detector: The face detection model (e.g., Haar cascade).
-
-    Returns:
-        bool: True if a face is detected, False otherwise.
-    """
     if frame is None:
         print("Image is empty!!")
         return False
@@ -199,11 +182,17 @@ def detect_face_in_video(frame):
    
 def face_detection():
     result = False
-    for file_name in os.listdir(DOWNLOAD_FOLDER):
-        if file_name.lower().endswith(".jpg"):
-            result = is_face_match(image_path,f'{DOWNLOAD_FOLDER}//{file_name}')
-            if(result == True):
-                print("Authorized Entrance has been made")
+    print("Start compare with authorized photos:")
+    for folder in folders:
+        folder_name = os.path.basename(folder)  # Get the folder name
+        print(f"Processing folder: {folder_name}")
+        for file in os.listdir(folder):
+            if file.endswith(".jpg"):
+                file_path = os.path.join(folder, file)
+                print(f"Processing file: {file_path} in folder: {folder_name}")
+                result = is_face_match(image_path,file_path)
+                if(result == True):
+                    print(f'Authorized Entrance has been made by {folder_name}')
                 break
     if result == False:
         print("UnAuthorized entrance was tried. Send Email with details")
@@ -230,8 +219,10 @@ def main():
 
     try:
         # Loop to continuously check for faces in the video feed
+        print("start photo for face detection...")
         while True:
             # Capture a frame from the camera
+            os.remove(image_path)
             picam2.start_and_capture_file(image_path)
             frame = cv2.imread(image_path)
            
@@ -250,5 +241,3 @@ def main():
         picam2.close()
         picam2.stop()
    
-if __name__ == "__main__":
-    main()
